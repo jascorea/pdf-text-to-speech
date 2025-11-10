@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Text-to-Speech Reader</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>PDF Text-to-Speech Reader</h1>
+            <p>Upload a PDF file and listen to it with customizable voice settings</p>
+        </header>
+
+        <main>
+            <!-- File Upload Section -->
+            <section class="upload-section">
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-content">
+                        <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14,2 14,8 20,8"></polyline>
+                        </svg>
+                        <p>Drag and drop a PDF file here, or click to select</p>
+                        <input type="file" id="pdfInput" accept=".pdf" hidden>
+                        <button type="button" class="select-btn" onclick="document.getElementById('pdfInput').click()">
+                            Choose PDF File
+                        </button>
+                    </div>
+                </div>
+                <div class="file-info" id="fileInfo" style="display: none;">
+                    <span id="fileName"></span>
+                    <button id="removeFile" class="remove-btn">×</button>
+                </div>
+            </section>
+
+            <!-- Controls Section -->
+            <section class="controls-section" id="controlsSection" style="display: none;">
+                <div class="playback-controls">
+                    <button id="playBtn" class="control-btn primary">
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <polygon points="5,3 19,12 5,21"></polygon>
+                        </svg>
+                        Play
+                    </button>
+                    <button id="pauseBtn" class="control-btn" disabled>
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <rect x="6" y="4" width="4" height="16"></rect>
+                            <rect x="14" y="4" width="4" height="16"></rect>
+                        </svg>
+                        Pause
+                    </button>
+                    <button id="stopBtn" class="control-btn" disabled>
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <rect x="4" y="4" width="16" height="16"></rect>
+                        </svg>
+                        Stop
+                    </button>
+                </div>
+
+                <div class="voice-controls">
+                    <div class="control-group">
+                        <label for="speedControl">Speed: <span id="speedValue">1.0x</span></label>
+                        <input type="range" id="speedControl" min="0.5" max="2.0" step="0.1" value="1.0">
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="pitchControl">Pitch: <span id="pitchValue">1.0</span></label>
+                        <input type="range" id="pitchControl" min="0.5" max="2.0" step="0.1" value="1.0">
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="voiceSelect">Voice:</label>
+                        <select id="voiceSelect">
+                            <option value="">Loading voices...</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="progress-info">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <span id="progressText">Ready to play</span>
+                </div>
+            </section>
+
+            <!-- Text Display Section -->
+            <section class="text-section" id="textSection" style="display: none;">
+                <div class="text-container" id="textContainer">
+                    <div id="extractedText" class="extracted-text">
+                        <!-- PDF text content will be displayed here -->
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>Optimized for Chrome browser | Supports PDF text extraction and speech synthesis</p>
+        </footer>
+    </div>
+
+    <script src="pdf-reader.js"></script>
+    <script src="speech-controller.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
