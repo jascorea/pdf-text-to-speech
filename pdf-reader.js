@@ -12,130 +12,72 @@ class PDFReader {
         this.onError = null;
         this.onProgress = null;
         
-        // Configure PDF.js worker with fallback for HTTPS sites
+        // Configure PDF.js worker
         if (typeof pdfjsLib !== 'undefined') {
-            this.configurePDFWorker();
-        }
-    }
-
-    /**
-     * Configure PDF.js worker with fallbacks for HTTPS sites
-     */
-    configurePDFWorker() {
-        try {
-            // Primary CDN
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-            
-            // Test if worker loads, set up fallback
-            const testWorker = new Worker(pdfjsLib.GlobalWorkerOptions.workerSrc);
-            testWorker.terminate();
-        } catch (error) {
-            console.warn('Primary PDF worker failed, using fallback:', error);
-            // Fallback CDN
-            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
         }
     }
 
     /**
-     * Load and process PDF file with retry logic for reliability
+     * Load and process PDF file
      * @param {File} pdfFile - The PDF file to process
      */
     async loadPDF(pdfFile) {
-        const maxRetries = 3;
-        let lastError = null;
+        try {
+            if (!pdfFile || pdfFile.type !== 'application/pdf') {
+                throw new Error('Please select a valid PDF file');
+            }
 
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                if (!pdfFile || pdfFile.type !== 'application/pdf') {
-                    throw new Error('Please select a valid PDF file');
-                }
+            if (this.onProgress) {
+                this.onProgress('Loading PDF...', 0);
+            }
 
-                // Show loading state
-                if (this.onProgress) {
-                    const retryText = attempt > 1 ? ` (Attempt ${attempt}/${maxRetries})` : '';
-                    this.onProgress(`Loading PDF...${retryText}`, 0);
-                }
+            // Read file
+            const arrayBuffer = await this.readFile(pdfFile);
+            
+            // Load PDF document
+            this.pdfDocument = await pdfjsLib.getDocument({
+                data: arrayBuffer,
+                cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+                cMapPacked: true
+            }).promise;
+            
+            if (this.onProgress) {
+                this.onProgress('Extracting text...', 50);
+            }
 
-                // Ensure worker is configured before each attempt
-                if (attempt > 1) {
-                    this.configurePDFWorker();
-                    // Small delay between retries
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                }
+            // Extract text from all pages
+            await this.extractAllText();
+            
+            if (this.onProgress) {
+                this.onProgress('Processing complete', 100);
+            }
 
-                const arrayBuffer = await this.readFileWithRetry(pdfFile);
-                
-                // Load PDF document with enhanced configuration
-                this.pdfDocument = await pdfjsLib.getDocument({
-                    data: arrayBuffer,
-                    cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
-                    cMapPacked: true,
-                    standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/',
-                    useSystemFonts: false, // Better compatibility on HTTPS
-                    verbosity: 0 // Reduce console noise
-                }).promise;
-                
-                if (this.onProgress) {
-                    this.onProgress('Extracting text...', 0);
-                }
+            // Callback with extracted text
+            if (this.onTextExtracted) {
+                this.onTextExtracted(this.extractedText, this.sentences);
+            }
 
-                // Extract text from all pages
-                await this.extractAllText();
-                
-                if (this.onProgress) {
-                    this.onProgress('Processing complete', 100);
-                }
-
-                // Callback with extracted text
-                if (this.onTextExtracted) {
-                    this.onTextExtracted(this.extractedText, this.sentences);
-                }
-
-                // Success - break out of retry loop
-                return;
-
-            } catch (error) {
-                console.warn(`PDF loading attempt ${attempt} failed:`, error);
-                lastError = error;
-
-                if (attempt === maxRetries) {
-                    // Final attempt failed
-                    console.error('All PDF loading attempts failed:', lastError);
-                    if (this.onError) {
-                        this.onError(`Failed to load PDF after ${maxRetries} attempts. Please try again or use a different PDF file. Error: ${lastError.message}`);
-                    }
-                } else {
-                    // Will retry
-                    if (this.onProgress) {
-                        this.onProgress(`Loading failed, retrying... (${attempt}/${maxRetries})`, 0);
-                    }
-                }
+        } catch (error) {
+            console.error('PDF loading failed:', error);
+            if (this.onError) {
+                this.onError(`Failed to load PDF: ${error.message}`);
             }
         }
     }
 
     /**
-     * Read file with retry logic for better reliability
+     * Read file as ArrayBuffer
      * @param {File} file - File to read
      * @returns {Promise<ArrayBuffer>} - File content as ArrayBuffer
      */
-    async readFileWithRetry(file) {
+    async readFile(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             
-            reader.onload = () => {
-                resolve(reader.result);
-            };
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(new Error('Failed to read PDF file'));
             
-            reader.onerror = () => {
-                reject(new Error('Failed to read PDF file'));
-            };
-            
-            reader.onabort = () => {
-                reject(new Error('File reading was aborted'));
-            };
-            
-            // Read file as ArrayBuffer
             reader.readAsArrayBuffer(file);
         });
     }
@@ -150,15 +92,15 @@ class PDFReader {
         for (let pageNum = 1; pageNum <= numPages; pageNum++) {
             try {
                 if (this.onProgress) {
-                    const progress = ((pageNum - 1) / numPages) * 100;
+                    const progress = 50 + ((pageNum - 1) / numPages) * 50;
                     this.onProgress(`Processing page ${pageNum} of ${numPages}...`, progress);
                 }
 
                 const page = await this.pdfDocument.getPage(pageNum);
                 const textContent = await page.getTextContent();
                 
-                // Extract text items and preserve spacing
-                const pageText = this.processTextContent(textContent);
+                // Extract text items
+                const pageText = textContent.items.map(item => item.str).join(' ');
                 
                 if (pageText.trim()) {
                     textParts.push(pageText);
@@ -166,64 +108,14 @@ class PDFReader {
                 
             } catch (error) {
                 console.warn(`Error extracting text from page ${pageNum}:`, error);
-                // Continue with other pages even if one fails
             }
         }
 
         // Combine all text
         this.extractedText = textParts.join('\n\n').trim();
         
-        // Process text into sentences for better speech synthesis
+        // Process text into sentences
         this.processSentences();
-    }
-
-    /**
-     * Process PDF.js text content to preserve formatting
-     * @param {Object} textContent - PDF.js text content object
-     * @returns {string} - Processed text
-     */
-    processTextContent(textContent) {
-        const textItems = textContent.items;
-        let text = '';
-        let lastY = null;
-        let lastX = null;
-
-        textItems.forEach((item, index) => {
-            const currentY = item.transform[5];
-            const currentX = item.transform[4];
-            
-            // Add line breaks for new lines (different Y position)
-            if (lastY !== null && Math.abs(currentY - lastY) > 5) {
-                text += '\n';
-            }
-            // Add spaces for significant horizontal gaps
-            else if (lastX !== null && currentX - lastX > 20) {
-                text += ' ';
-            }
-            
-            text += item.str;
-            lastY = currentY;
-            lastX = currentX + (item.width || 0);
-        });
-
-        return this.cleanText(text);
-    }
-
-    /**
-     * Clean and format extracted text
-     * @param {string} text - Raw extracted text
-     * @returns {string} - Cleaned text
-     */
-    cleanText(text) {
-        return text
-            // Normalize whitespace
-            .replace(/\s+/g, ' ')
-            // Fix broken words at line breaks
-            .replace(/(\w)-\s+(\w)/g, '$1$2')
-            // Clean up multiple spaces
-            .replace(/\s+/g, ' ')
-            // Remove leading/trailing whitespace
-            .trim();
     }
 
     /**
@@ -235,9 +127,14 @@ class PDFReader {
             return;
         }
 
-        // Split text into sentences using multiple delimiters
+        // Clean text first
+        const cleanText = this.extractedText
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        // Split into sentences
         const sentenceEnders = /[.!?]+\s*/g;
-        const rawSentences = this.extractedText.split(sentenceEnders);
+        const rawSentences = cleanText.split(sentenceEnders);
         
         this.sentences = rawSentences
             .map(sentence => sentence.trim())
@@ -245,9 +142,9 @@ class PDFReader {
             .map((sentence, index) => ({
                 id: index,
                 text: sentence,
-                startChar: 0, // Will be calculated later
-                endChar: 0,   // Will be calculated later
-                element: null // Will store DOM element reference
+                startChar: 0,
+                endChar: sentence.length,
+                element: null
             }));
 
         // Calculate character positions
@@ -255,7 +152,7 @@ class PDFReader {
         this.sentences.forEach(sentence => {
             sentence.startChar = charPosition;
             sentence.endChar = charPosition + sentence.text.length;
-            charPosition += sentence.text.length + 1; // +1 for sentence delimiter
+            charPosition += sentence.text.length + 1;
         });
     }
 
