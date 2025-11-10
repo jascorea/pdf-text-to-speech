@@ -136,6 +136,32 @@ class SpeechController {
                 throw new Error('No text provided to speak');
             }
 
+            // Ensure voices are loaded (critical for HTTPS sites)
+            if (this.voices.length === 0) {
+                this.loadVoices();
+                // Wait a bit for voices to load on HTTPS sites
+                setTimeout(() => {
+                    this.initiateSpeech(text);
+                }, 100);
+                return;
+            }
+
+            this.initiateSpeech(text);
+
+        } catch (error) {
+            console.error('Error starting speech:', error);
+            if (this.onError) {
+                this.onError(`Error starting speech: ${error.message}`);
+            }
+        }
+    }
+
+    /**
+     * Initialize speech synthesis (separate method for better error handling)
+     * @param {string} text - Text to speak
+     */
+    initiateSpeech(text) {
+        try {
             // Create utterance
             this.currentUtterance = new SpeechSynthesisUtterance(text);
             this.applySettings(this.currentUtterance);
@@ -143,6 +169,30 @@ class SpeechController {
             // Set up event handlers
             this.setupUtteranceEvents();
 
+            // For HTTPS sites, ensure speech synthesis is ready
+            if (this.synth.pending || this.synth.speaking) {
+                this.synth.cancel();
+                // Small delay to ensure clean state
+                setTimeout(() => {
+                    this.startSpeechSynthesis();
+                }, 50);
+            } else {
+                this.startSpeechSynthesis();
+            }
+
+        } catch (error) {
+            console.error('Error initiating speech:', error);
+            if (this.onError) {
+                this.onError(`Error initiating speech: ${error.message}`);
+            }
+        }
+    }
+
+    /**
+     * Start the actual speech synthesis
+     */
+    startSpeechSynthesis() {
+        try {
             // Start speaking
             this.synth.speak(this.currentUtterance);
             this.isPlaying = true;
@@ -158,9 +208,9 @@ class SpeechController {
             }
 
         } catch (error) {
-            console.error('Error starting speech:', error);
+            console.error('Error starting speech synthesis:', error);
             if (this.onError) {
-                this.onError(`Error starting speech: ${error.message}`);
+                this.onError(`Speech synthesis failed: ${error.message}. Try refreshing the page and ensure you're using Chrome browser.`);
             }
         }
     }

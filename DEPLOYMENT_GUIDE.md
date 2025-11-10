@@ -101,9 +101,27 @@ When you want to update your app:
 - Check that all files uploaded correctly
 - Look for any missing files in the repository
 
+**"Speech synthesis failed" error:**
+- This is now fixed with HTTPS compatibility improvements
+- Refresh the page and try again
+- Ensure you're using Chrome browser for best voice support
+- Make sure to interact with the page before trying to play (click upload first)
+
+**PDF upload takes multiple attempts:**
+- This is now fixed with retry logic (up to 3 automatic retries)
+- The app will automatically retry failed uploads
+- Wait for the retry to complete before trying again manually
+- If it still fails after 3 attempts, try a different PDF file
+
 **Files didn't upload:**
 - Make sure file names match exactly (case-sensitive)
 - Try uploading one file at a time if bulk upload fails
+
+### ✅ **Recent Fixes Applied:**
+- **Fixed speech synthesis** errors on HTTPS sites (GitHub Pages)
+- **Added PDF upload retry logic** for better reliability
+- **Improved voice loading** for mobile browsers
+- **Enhanced error messages** with better user guidance
 
 ## 🎉 Success!
 

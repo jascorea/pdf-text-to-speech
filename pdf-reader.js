@@ -12,54 +12,132 @@ class PDFReader {
         this.onError = null;
         this.onProgress = null;
         
-        // Configure PDF.js worker
+        // Configure PDF.js worker with fallback for HTTPS sites
         if (typeof pdfjsLib !== 'undefined') {
-            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            this.configurePDFWorker();
         }
     }
 
     /**
-     * Load and process PDF file
+     * Configure PDF.js worker with fallbacks for HTTPS sites
+     */
+    configurePDFWorker() {
+        try {
+            // Primary CDN
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            
+            // Test if worker loads, set up fallback
+            const testWorker = new Worker(pdfjsLib.GlobalWorkerOptions.workerSrc);
+            testWorker.terminate();
+        } catch (error) {
+            console.warn('Primary PDF worker failed, using fallback:', error);
+            // Fallback CDN
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+        }
+    }
+
+    /**
+     * Load and process PDF file with retry logic for reliability
      * @param {File} pdfFile - The PDF file to process
      */
     async loadPDF(pdfFile) {
-        try {
-            if (!pdfFile || pdfFile.type !== 'application/pdf') {
-                throw new Error('Please select a valid PDF file');
-            }
+        const maxRetries = 3;
+        let lastError = null;
 
-            // Show loading state
-            if (this.onProgress) {
-                this.onProgress('Loading PDF...', 0);
-            }
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                if (!pdfFile || pdfFile.type !== 'application/pdf') {
+                    throw new Error('Please select a valid PDF file');
+                }
 
-            const arrayBuffer = await pdfFile.arrayBuffer();
-            
-            // Load PDF document
-            this.pdfDocument = await pdfjsLib.getDocument(arrayBuffer).promise;
-            
-            if (this.onProgress) {
-                this.onProgress('Extracting text...', 0);
-            }
+                // Show loading state
+                if (this.onProgress) {
+                    const retryText = attempt > 1 ? ` (Attempt ${attempt}/${maxRetries})` : '';
+                    this.onProgress(`Loading PDF...${retryText}`, 0);
+                }
 
-            // Extract text from all pages
-            await this.extractAllText();
-            
-            if (this.onProgress) {
-                this.onProgress('Processing complete', 100);
-            }
+                // Ensure worker is configured before each attempt
+                if (attempt > 1) {
+                    this.configurePDFWorker();
+                    // Small delay between retries
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
 
-            // Callback with extracted text
-            if (this.onTextExtracted) {
-                this.onTextExtracted(this.extractedText, this.sentences);
-            }
+                const arrayBuffer = await this.readFileWithRetry(pdfFile);
+                
+                // Load PDF document with enhanced configuration
+                this.pdfDocument = await pdfjsLib.getDocument({
+                    data: arrayBuffer,
+                    cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+                    cMapPacked: true,
+                    standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/',
+                    useSystemFonts: false, // Better compatibility on HTTPS
+                    verbosity: 0 // Reduce console noise
+                }).promise;
+                
+                if (this.onProgress) {
+                    this.onProgress('Extracting text...', 0);
+                }
 
-        } catch (error) {
-            console.error('Error loading PDF:', error);
-            if (this.onError) {
-                this.onError(`Error loading PDF: ${error.message}`);
+                // Extract text from all pages
+                await this.extractAllText();
+                
+                if (this.onProgress) {
+                    this.onProgress('Processing complete', 100);
+                }
+
+                // Callback with extracted text
+                if (this.onTextExtracted) {
+                    this.onTextExtracted(this.extractedText, this.sentences);
+                }
+
+                // Success - break out of retry loop
+                return;
+
+            } catch (error) {
+                console.warn(`PDF loading attempt ${attempt} failed:`, error);
+                lastError = error;
+
+                if (attempt === maxRetries) {
+                    // Final attempt failed
+                    console.error('All PDF loading attempts failed:', lastError);
+                    if (this.onError) {
+                        this.onError(`Failed to load PDF after ${maxRetries} attempts. Please try again or use a different PDF file. Error: ${lastError.message}`);
+                    }
+                } else {
+                    // Will retry
+                    if (this.onProgress) {
+                        this.onProgress(`Loading failed, retrying... (${attempt}/${maxRetries})`, 0);
+                    }
+                }
             }
         }
+    }
+
+    /**
+     * Read file with retry logic for better reliability
+     * @param {File} file - File to read
+     * @returns {Promise<ArrayBuffer>} - File content as ArrayBuffer
+     */
+    async readFileWithRetry(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            
+            reader.onload = () => {
+                resolve(reader.result);
+            };
+            
+            reader.onerror = () => {
+                reject(new Error('Failed to read PDF file'));
+            };
+            
+            reader.onabort = () => {
+                reject(new Error('File reading was aborted'));
+            };
+            
+            // Read file as ArrayBuffer
+            reader.readAsArrayBuffer(file);
+        });
     }
 
     /**
